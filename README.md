@@ -1,8 +1,10 @@
 # Tatyana V3
 
-Residual MLP surrogate model for GENE linear gyrokinetic stability, developed at the **Plasma Theory Group, Nanyang Technological University** (supervisor: Prof. Zhisong Qu).
+Residual MLP surrogate model for GENE linear gyrokinetic stability.
 
 Given seven local equilibrium parameters, Tatyana V3 predicts the dominant linear growth rate, mode frequency, and species-resolved linear outputs — all quantities required for quasilinear transport modelling via saturation rules such as SAT3.
+
+Feel free to contact me via flyawaypencil480@gmail.com 
 
 ---
 
@@ -53,27 +55,9 @@ Weight file (`tatyana_v3.pt`) and dataset (`df_clean_reconstructed.tsv`) are not
 
 ---
 
-## Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-**requirements.txt**
-```
-torch>=2.0
-numpy
-pandas
-scikit-learn
-joblib
-matplotlib
-```
-
----
-
 ## Training
 
-Place `df_clean_reconstructed.tsv` in the repo root, then:
+Place `your_dataset.tsv` in the repo root, then:
 
 ```bash
 python tatyana_v3.py
@@ -107,7 +91,7 @@ R = mode_ratio(model, sx, sy, X)
 
 ---
 
-## Roadmap
+## Roadmap afterwards (will be updated)
 
 - [ ] Item 3 — mode-switching function M(R): smooth interpolation between SAT3 ITG (C=3.3) and TEM (C=12.7) coefficients using R = |γ_e / γ_i|
 - [ ] Item 4 — add ρ_unit or ion mass number A as input (pending confirmation of dataset availability)
@@ -115,13 +99,7 @@ R = mode_ratio(model, sx, sy, X)
 
 ---
 
-## Citation
-
-If you use this model, please cite the NTU Plasma Theory Group and acknowledge the NSCC Singapore computing resources used for data generation.
-
----
-
 ## Author
 
-Tingyi Chen — NTU Plasma Theory Group  
+Tingyi Chen — NTU Plasma Theory | BSc Physics Jilin University
 `flyawaypencil480@gmail.com`
