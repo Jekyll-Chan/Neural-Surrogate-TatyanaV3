@@ -1,6 +1,6 @@
 """
-Tatyana v3 — Residual MLP surrogate for GENE linear stability
-Extends v2 with:
+Tatyana v3 — Residual MLP surrogate for GENE linear stability~
+Extends v2 with: 相比于V2的升级
   [1] Species-resolved linear outputs as regression targets
       (gamma_e, omega_e, gamma_i, omega_i) — proxies for SAT3 WeL/WiL
       R = |gamma_e / gamma_i| feeds the future mode-switching M(R) in Item 3
@@ -25,10 +25,8 @@ from sklearn.preprocessing import StandardScaler
 import joblib
 import matplotlib.pyplot as plt
 
-# ---------------------------------------------------------------------------
 # Configuration
-# ---------------------------------------------------------------------------
-DATA_PATH   = Path("df_clean_reconstructed.tsv")
+DATA_PATH   = Path("df_clean_reconstructed.tsv") # Please replace it with your dataset name !!
 CKPT_PATH   = Path("tatyana_v3.pt")
 SCALER_PATH = Path("tatyana_v3_scalers.pkl")
 
@@ -52,9 +50,7 @@ W_WEIGHTS = 0.5   # loss weight for species-resolved targets vs gamma/omega
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
-# ---------------------------------------------------------------------------
 # Architecture
-# ---------------------------------------------------------------------------
 class ResBlock(nn.Module):
     def __init__(self, dim, dropout):
         super().__init__()
@@ -71,7 +67,7 @@ class ResBlock(nn.Module):
 
 class TatyanaMLP_V3(nn.Module):
     """
-    Single trunk, single head.
+    Single trunk, single head !
     (kymin, trpeps, shat, q0, omt_i, omt_e, omn)
         -> (gamma, omega, gamma_e, omega_e, gamma_i, omega_i)
     kmax / gamma_max resolved analytically via find_peak() at inference time.
@@ -86,9 +82,7 @@ class TatyanaMLP_V3(nn.Module):
         return self.head(self.blocks(self.embed(x)))
 
 
-# ---------------------------------------------------------------------------
 # Data loading
-# ---------------------------------------------------------------------------
 def load_data(path: Path):
     df = pd.read_csv(path, sep=r"\s+", engine="python")
     df = df[df["is_unstable"] == 1].dropna(subset=FEATURES + ALL_TARGETS)
@@ -112,9 +106,7 @@ def make_loaders(X, y, val_frac, batch):
             sx, sy)
 
 
-# ---------------------------------------------------------------------------
-# Training
-# ---------------------------------------------------------------------------
+# Training !!
 def train(model, tr_loader, va_loader, epochs, lr, device):
     opt    = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     sched  = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
@@ -164,9 +156,7 @@ def train(model, tr_loader, va_loader, epochs, lr, device):
     return history
 
 
-# ---------------------------------------------------------------------------
 # Evaluation
-# ---------------------------------------------------------------------------
 def evaluate(model, va_loader, sy, device):
     model.eval()
     preds, trues = [], []
@@ -184,9 +174,7 @@ def evaluate(model, va_loader, sy, device):
     return preds, trues
 
 
-# ---------------------------------------------------------------------------
 # Plotting
-# ---------------------------------------------------------------------------
 def plot_results(history, preds, trues):
     ncols = 1 + len(ALL_TARGETS)
     fig, axes = plt.subplots(1, ncols, figsize=(4 * ncols, 4))
@@ -207,9 +195,7 @@ def plot_results(history, preds, trues):
     print("Saved tatyana_v3_eval.png")
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -232,9 +218,7 @@ def main():
     plot_results(history, preds, trues)
 
 
-# ---------------------------------------------------------------------------
 # Inference helpers
-# ---------------------------------------------------------------------------
 def load_tatyana_v3(ckpt=CKPT_PATH, scalers=SCALER_PATH, device="cpu"):
     s = joblib.load(scalers)
     model = TatyanaMLP_V3(len(FEATURES), len(ALL_TARGETS), HIDDEN, DEPTH, DROPOUT)
