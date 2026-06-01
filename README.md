@@ -6,6 +6,10 @@ Given seven local equilibrium parameters, Tatyana V3 predicts the dominant linea
 
 Feel free to contact me via flyawaypencil480@gmail.com 
 
+
+Weight file (`tatyana_v3.pt`) and dataset (`df_clean_reconstructed.tsv`) are not included in this repository.
+
+
 ---
 
 ## Overview
@@ -38,22 +42,10 @@ Evaluated on a held-out 15% split (~10 k samples):
 | γ_i | 0.0223 | 3.40% |
 | ω_i | 0.0549 | 3.41% |
 
-![Parity plots](benchmark_tatyana_v3_parity.png)
+![Parity plots](images/benchmark_tatyana_v3_parity.png)
 
 ---
 
-## Repository structure
-
-```
-.
-├── tatyana_v3.py          # model definition, training, inference helpers
-├── requirements.txt
-└── README.md
-```
-
-Weight file (`tatyana_v3.pt`) and dataset (`df_clean_reconstructed.tsv`) are not included in this repository.
-
----
 
 ## Training
 
