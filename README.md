@@ -38,7 +38,7 @@ Evaluated on a held-out 15% split (~10 k samples):
 | γ_i | 0.0223 | 3.40% |
 | ω_i | 0.0549 | 3.41% |
 
-![Parity plots](tatyana_v3_eval.png)
+![Parity plots](benchmark_tatyana_v3_parity.png)
 
 ---
 
