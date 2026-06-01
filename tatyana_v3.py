@@ -1,6 +1,6 @@
 """
-Tatyana v3 — Residual MLP surrogate for GENE linear stability~
-Extends v2 with: 相比于V2的升级
+Tatyana v3 — Residual MLP surrogate for GENE linear stability
+Extends v2 with:
   [1] Species-resolved linear outputs as regression targets
       (gamma_e, omega_e, gamma_i, omega_i) — proxies for SAT3 WeL/WiL
       R = |gamma_e / gamma_i| feeds the future mode-switching M(R) in Item 3
@@ -13,6 +13,7 @@ Mapping: (kymin, trpeps, shat, q0, omt_i, omt_e, omn)
 Author : Tingyi Chen
 Email  : flyawaypencil480@gmail.com
 Date   : 2026-05-31
+Feel free to contact me about this~
 """
 
 import numpy as np
@@ -26,7 +27,7 @@ import joblib
 import matplotlib.pyplot as plt
 
 # Configuration
-DATA_PATH   = Path("df_clean_reconstructed.tsv") # Please replace it with your dataset name !!
+DATA_PATH   = Path("df_clean_reconstructed.tsv") # Please change to your dataset path 🫡
 CKPT_PATH   = Path("tatyana_v3.pt")
 SCALER_PATH = Path("tatyana_v3_scalers.pkl")
 
@@ -50,6 +51,7 @@ W_WEIGHTS = 0.5   # loss weight for species-resolved targets vs gamma/omega
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
+
 # Architecture
 class ResBlock(nn.Module):
     def __init__(self, dim, dropout):
@@ -67,7 +69,7 @@ class ResBlock(nn.Module):
 
 class TatyanaMLP_V3(nn.Module):
     """
-    Single trunk, single head !
+    Single trunk, single head. 使用单主干单头
     (kymin, trpeps, shat, q0, omt_i, omt_e, omn)
         -> (gamma, omega, gamma_e, omega_e, gamma_i, omega_i)
     kmax / gamma_max resolved analytically via find_peak() at inference time.
@@ -106,7 +108,7 @@ def make_loaders(X, y, val_frac, batch):
             sx, sy)
 
 
-# Training !!
+# Training
 def train(model, tr_loader, va_loader, epochs, lr, device):
     opt    = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     sched  = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
@@ -268,6 +270,155 @@ def mode_ratio(model, sx, sy, X_raw, device="cpu"):
     gamma_e = out[:, 2]   # index 2 in ALL_TARGETS
     gamma_i = out[:, 4]   # index 4 in ALL_TARGETS
     return np.abs(gamma_e / (gamma_i + 1e-8))
+
+
+# Some addings according to SAT3 path 
+# Added Item — SAT3 mode-switching function M(ω)
+#
+# SAT3 uses different saturation coefficients for ITG vs TEM:
+#   C_ITG = 3.3   (γ² / k⁵  scaling)
+#   C_TEM = 12.7  (γ² ρ_unit / k⁴  scaling)
+#
+# Discriminant: sign of mode frequency ω (predicted by V3 main head)
+#   ITG: ω > 0  (ion diamagnetic direction)
+#   TEM: ω < 0  (electron diamagnetic direction)
+#
+# Smooth form:  M(ω) = C_ITG + (C_TEM - C_ITG) · σ(−α · ω / ω_scale)
+#   ω → +∞  →  σ → 0  →  M = C_ITG = 3.3
+#   ω → −∞  →  σ → 1  →  M = C_TEM = 12.7
+#   ω_scale  — calibrated as median |ω| at the ITG/TEM boundary
+#   α        — steepness (default 5.0)
+# --------------------------------------------------------------------------- 
+
+C_ITG = 3.3
+C_TEM = 12.7
+
+MODESWITCH_PATH = Path("tatyana_v3_modeswitch.json")
+
+
+class ModeSwitch:
+    """
+    Smooth ITG↔TEM coefficient interpolator based on mode frequency ω.
+
+    Parameters
+    ----------
+    omega_scale : normalisation scale for ω (calibrated from data)
+    alpha       : sigmoid steepness (larger → sharper transition)
+    """
+    def __init__(self, omega_scale: float, alpha: float = 5.0):
+        self.omega_scale = float(omega_scale)
+        self.alpha       = float(alpha)
+
+    def __call__(self, omega: np.ndarray) -> np.ndarray:
+        """
+        omega : (N,) predicted mode frequencies 预测模式频率
+        Returns (N,) SAT3 coefficients in [C_ITG, C_TEM] 
+        """
+        omega = np.asarray(omega, dtype=np.float64)
+        w = 1.0 / (1.0 + np.exp(self.alpha * omega / (self.omega_scale + 1e-8)))
+        return C_ITG + (C_TEM - C_ITG) * w
+
+    def save(self, path=MODESWITCH_PATH):
+        import json
+        Path(path).write_text(
+            json.dumps({"omega_scale": self.omega_scale, "alpha": self.alpha}, indent=2)
+        )
+        print(f"Saved ModeSwitch → {path}  "
+              f"(omega_scale={self.omega_scale:.4f}, alpha={self.alpha:.2f})")
+
+    @classmethod
+    def load(cls, path=MODESWITCH_PATH):
+        import json
+        d = json.loads(Path(path).read_text())
+        return cls(omega_scale=d["omega_scale"], alpha=d["alpha"])
+
+
+def calibrate_mode_switch(data_path=DATA_PATH, alpha: float = 5.0,
+                          save: bool = True) -> "ModeSwitch":
+    """
+    Fit omega_scale from labelled ITG/TEM data.
+
+    Strategy: omega_scale = median |ω| across all samples near the boundary
+    (|ω| < 75th percentile), giving a robust normalisation that avoids
+    outlier-driven scale collapse.
+
+    Prints calibration report and saves tatyana_v3_modeswitch.png.
+    """
+    df = pd.read_csv(data_path, sep=r"\s+", engine="python")
+    df["omega"] = pd.to_numeric(df["omega"], errors="coerce")
+    df = df[df["is_unstable"] == 1].dropna(subset=["omega", "mode"])
+
+    itg_w = df[df["mode"] == "ITG"]["omega"].values
+    tem_w = df[df["mode"] == "TEM"]["omega"].values
+
+    # omega_scale = median |ω| of near-boundary samples (lower 75% by |ω|)
+    all_w = df["omega"].values
+    p75   = np.percentile(np.abs(all_w), 75)
+    omega_scale = float(np.median(np.abs(all_w[np.abs(all_w) < p75])))
+
+    ms = ModeSwitch(omega_scale=omega_scale, alpha=alpha)
+
+    # Accuracy
+    pred_tem = ms(all_w) > (C_ITG + C_TEM) / 2
+    true_tem = df["mode"].values == "TEM"
+    acc = np.mean(pred_tem == true_tem) * 100
+
+    print("\n--- ModeSwitch calibration (ω-based) ---")
+    print(f"  ITG  n={len(itg_w):6d}  median ω = {np.median(itg_w):+.4f}")
+    print(f"  TEM  n={len(tem_w):6d}  median ω = {np.median(tem_w):+.4f}")
+    print(f"  ω_scale              = {omega_scale:.4f}")
+    print(f"  α                    = {alpha:.2f}")
+    print(f"  Threshold accuracy   = {acc:.1f}%")
+
+    # Diagnostic plot
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+
+    # ω distributions per mode
+    w_range = np.percentile(np.abs(all_w), 98)
+    bins = np.linspace(-w_range, w_range, 80)
+    axes[0].hist(itg_w, bins=bins, alpha=0.6, label="ITG",
+                 color="tab:blue", density=True)
+    axes[0].hist(tem_w, bins=bins, alpha=0.6, label="TEM",
+                 color="tab:orange", density=True)
+    axes[0].axvline(0, color="red", lw=1.5, linestyle="--", label="ω=0")
+    axes[0].set(xlabel="ω", ylabel="Density", title="ω distribution per mode")
+    axes[0].legend()
+
+    # M(ω) curve
+    w_plot = np.linspace(-w_range, w_range, 300)
+    axes[1].plot(w_plot, ms(w_plot), "k-", lw=2, label="M(ω)")
+    axes[1].axhline(C_ITG, color="tab:blue",   lw=1, linestyle=":",
+                    label=f"C_ITG={C_ITG}")
+    axes[1].axhline(C_TEM, color="tab:orange", lw=1, linestyle=":",
+                    label=f"C_TEM={C_TEM}")
+    axes[1].axvline(0, color="red", lw=1, linestyle="--", label="ω=0")
+    axes[1].set(xlabel="ω", ylabel="SAT3 coefficient M(ω)",
+                title="Mode-switching function")
+    axes[1].legend()
+
+    plt.tight_layout()
+    plt.savefig("tatyana_v3_modeswitch.png", dpi=150)
+    print("  Saved tatyana_v3_modeswitch.png")
+    plt.close()
+
+    if save:
+        ms.save()
+
+    return ms
+
+
+def sat3_coefficient(model, sx, sy, X_raw, ms: ModeSwitch,
+                     device="cpu") -> np.ndarray:
+    """
+    End-to-end: given raw inputs, return per-sample SAT3 coefficient M(ω).
+
+    X_raw : (N, 7)  [kymin, trpeps, shat, q0, omt_i, omt_e, omn]
+    ms    : calibrated ModeSwitch instance
+    Returns (N,) floats in [C_ITG, C_TEM]
+    """
+    out   = predict(model, sx, sy, X_raw, device=device)
+    omega = out[:, 1]   # index 1 in ALL_TARGETS
+    return ms(omega)
 
 
 if __name__ == "__main__":
