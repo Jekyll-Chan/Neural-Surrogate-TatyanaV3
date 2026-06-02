@@ -6,6 +6,7 @@ Given seven local equilibrium parameters, Tatyana V3 predicts the dominant linea
 
 Feel free to contact me via flyawaypencil480@gmail.com 
 
+More details in TatyanaV3Constructions.pdf
 
 Weight file (`tatyana_v3.pt`) and dataset (`df_clean_reconstructed.tsv`) are not included in this repository.
 
